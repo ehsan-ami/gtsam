@@ -162,12 +162,33 @@ virtual class NoiseModelFactor : gtsam::NonlinearFactor {
 
 #include <gtsam/nonlinear/Marginals.h>
 class Marginals {
+  enum Factorization { CHOLESKY, QR };
+
   Marginals(const gtsam::NonlinearFactorGraph& graph,
-            const gtsam::Values& solution);
-  Marginals(const gtsam::GaussianFactorGraph& gfgraph,
-            const gtsam::Values& solution);
-  Marginals(const gtsam::GaussianFactorGraph& gfgraph,
-            const gtsam::VectorValues& solutionvec);
+            const gtsam::Values& solution,
+            gtsam::Marginals::Factorization factorization =
+                gtsam::Marginals::Factorization::CHOLESKY);
+  Marginals(const gtsam::NonlinearFactorGraph& graph,
+            const gtsam::Values& solution, const gtsam::Ordering& ordering,
+            gtsam::Marginals::Factorization factorization =
+                gtsam::Marginals::Factorization::CHOLESKY);
+  Marginals(const gtsam::GaussianFactorGraph& graph,
+            const gtsam::Values& solution,
+            gtsam::Marginals::Factorization factorization =
+                gtsam::Marginals::Factorization::CHOLESKY);
+  Marginals(const gtsam::GaussianFactorGraph& graph,
+            const gtsam::Values& solution, const gtsam::Ordering& ordering,
+            gtsam::Marginals::Factorization factorization =
+                gtsam::Marginals::Factorization::CHOLESKY);
+  Marginals(const gtsam::GaussianFactorGraph& graph,
+            const gtsam::VectorValues& solution,
+            gtsam::Marginals::Factorization factorization =
+                gtsam::Marginals::Factorization::CHOLESKY);
+  Marginals(const gtsam::GaussianFactorGraph& graph,
+            const gtsam::VectorValues& solution,
+            const gtsam::Ordering& ordering,
+            gtsam::Marginals::Factorization factorization =
+                gtsam::Marginals::Factorization::CHOLESKY);
 
   void print(string s = "Marginals: ", const gtsam::KeyFormatter& keyFormatter =
                                            gtsam::DefaultKeyFormatter) const;
