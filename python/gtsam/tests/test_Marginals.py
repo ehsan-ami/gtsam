@@ -76,41 +76,33 @@ def create_wnoa_problem(dt, qc=1.0):
     white-noise-on-acceleration motion factor uses
     Q(dt) = qc * [[dt^3/3, dt^2/2], [dt^2/2, dt]].
     For small dt this full-rank system has a tiny normalized Cholesky pivot.
+    Returns the graph, a zero solution, the keys, and the dense covariance
+    inv(A^T A) of the whitened Jacobian A, ordered x0, x1.
     """
     x0, x1 = X(0), X(1)
-    position = np.array([[1.0, 0.0]])
-    velocity = np.array([[0.0, 1.0]])
     transition = np.array([[1.0, dt], [0.0, 1.0]])
     process_covariance = qc * np.array(
         [[dt**3 / 3.0, dt**2 / 2.0], [dt**2 / 2.0, dt]]
     )
+    # Wrapped JacobianFactors take diagonal noise, so whiten by Q^(-1/2) here.
+    whitening = np.linalg.inv(np.linalg.cholesky(process_covariance))
+
+    jacobian = np.zeros((5, 4))
+    jacobian[0, 0] = 1.0 / 0.5  # position of x0
+    jacobian[1, 2] = 1.0 / 0.5  # position of x1
+    jacobian[2, 1] = 1.0 / 10.0  # velocity prior on x0
+    jacobian[3:, :2] = -whitening @ transition
+    jacobian[3:, 2:] = whitening
 
     graph = gtsam.GaussianFactorGraph()
-    position_noise = gtsam.noiseModel.Isotropic.Sigma(1, 0.5)
-    velocity_noise = gtsam.noiseModel.Isotropic.Sigma(1, 10.0)
-    graph.add(x0, position, np.zeros(1), position_noise)
-    graph.add(x1, position, np.zeros(1), position_noise)
-    graph.add(x0, velocity, np.zeros(1), velocity_noise)
-    # Wrapped JacobianFactors take diagonal noise, so prewhiten by Q^(-1/2).
-    whitening = np.linalg.inv(np.linalg.cholesky(process_covariance))
-    graph.add(
-        x0, -whitening @ transition, x1, whitening, np.zeros(2),
-        gtsam.noiseModel.Unit.Create(2),
-    )
+    unit = gtsam.noiseModel.Unit.Create
+    graph.add(x0, jacobian[:3, :2], x1, jacobian[:3, 2:], np.zeros(3), unit(3))
+    graph.add(x0, jacobian[3:, :2], x1, jacobian[3:, 2:], np.zeros(2), unit(2))
 
-    # Dense reference covariance from the information matrix, ordered x0, x1.
-    measurement_information = np.zeros((4, 4))
-    measurement_information[0, 0] += 1.0 / 0.5**2
-    measurement_information[2, 2] += 1.0 / 0.5**2
-    measurement_information[1, 1] += 1.0 / 10.0**2
-    motion_jacobian = np.hstack([-transition, np.eye(2)])
-    information = measurement_information + motion_jacobian.T @ np.linalg.solve(
-        process_covariance, motion_jacobian
-    )
     solution = gtsam.VectorValues()
     solution.insert(x0, np.zeros(2))
     solution.insert(x1, np.zeros(2))
-    return graph, solution, (x0, x1), np.linalg.inv(information)
+    return graph, solution, (x0, x1), np.linalg.inv(jacobian.T @ jacobian)
 
 
 class TestMarginals(GtsamTestCase):
@@ -178,16 +170,24 @@ class TestMarginals(GtsamTestCase):
         factorization = gtsam.Marginals.Factorization
         for dt in (3e-3, 1e-3):
             graph, solution, keys, expected = create_wnoa_problem(dt)
+            # Normwise: entries span four orders of magnitude.
+            tolerance = 1e-9 * np.abs(expected).max()
             marginals = gtsam.Marginals(graph, solution, factorization.QR)
             joint = marginals.jointMarginalCovariance(list(keys)).fullMatrix()
-            np.testing.assert_allclose(joint, expected, rtol=1e-9)
+            np.testing.assert_allclose(joint, expected, rtol=0, atol=tolerance)
             np.testing.assert_allclose(
-                marginals.marginalCovariance(keys[1]), expected[2:, 2:], rtol=1e-9
+                marginals.marginalCovariance(keys[1]),
+                expected[2:, 2:],
+                rtol=0,
+                atol=tolerance,
             )
             ordering = gtsam.Ordering(list(keys))
             ordered = gtsam.Marginals(graph, solution, ordering, factorization.QR)
             np.testing.assert_allclose(
-                ordered.marginalCovariance(keys[0]), expected[:2, :2], rtol=1e-9
+                ordered.marginalCovariance(keys[0]),
+                expected[:2, :2],
+                rtol=0,
+                atol=tolerance,
             )
 
     def test_cholesky_rejects_tiny_normalized_pivot(self):
